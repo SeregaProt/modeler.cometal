@@ -8,7 +8,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 
-export default function ProjectPage({ projectId, goHome }) {
+export default function ProjectPage({ projectId, goHome, onOpenProcess }) {
   const [processes, setProcesses] = useState([]);
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
@@ -31,7 +31,14 @@ export default function ProjectPage({ projectId, goHome }) {
   return (
     <Box sx={{ p: 3 }}>
       {/* Верхняя строка */}
-      <Typography variant="h5" mb={2}>📁 {project.name}</Typography>
+      <Box display="flex" alignItems="center" mb={2}>
+        <Typography variant="h5" sx={{ flexGrow: 1 }}>📁 {project.name}</Typography>
+        {goHome && (
+          <Button variant="outlined" size="small" onClick={goHome} sx={{ mr: 1 }}>
+            Back
+          </Button>
+        )}
+      </Box>
 
       {/* Поиск и кнопки */}
       <Box display="flex" alignItems="center" mb={2}>
@@ -65,7 +72,9 @@ export default function ProjectPage({ projectId, goHome }) {
           </TableHead>
           <TableBody>
             {filteredProcesses.map(proc => (
-              <TableRow hover key={proc.id}>
+              <TableRow hover key={proc.id}
+                onClick={() => onOpenProcess && onOpenProcess(proc.id)}
+                sx={{ cursor: 'pointer' }}>
                 <TableCell padding="checkbox"><Checkbox/></TableCell>
                 <TableCell>
                   <Typography variant="body2" color="primary">{proc.name}</Typography>
