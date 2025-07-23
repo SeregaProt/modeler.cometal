@@ -1,0 +1,24 @@
+# Node.js (backend)
+backend/node_modules/
+backend/db.sqlite
+backend/db.sqlite-journal
+
+# React (frontend)
+frontend/node_modules/
+frontend/build/
+frontend/.env
+
+# Mac OS
+.DS_Store
+
+# VSCode/IDE settings
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# npm-debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
