@@ -1,20 +1,43 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Box, Typography, Button, TextField, Paper, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, Checkbox,
-  IconButton, Avatar, InputAdornment
+  Box, Typography, Button, TextField, Paper, Card, CardContent,
+  IconButton, Avatar, InputAdornment, Dialog, DialogTitle,
+  DialogContent, DialogActions, Autocomplete, Chip, Menu, MenuItem,
+  AppBar, Toolbar, Grid, Drawer, List, ListItem,
+  ListItemAvatar, ListItemText, Divider, Tooltip
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import DownloadIcon from '@mui/icons-material/Download';
+import UploadIcon from '@mui/icons-material/Upload';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import FolderIcon from '@mui/icons-material/Folder';
+import PersonAddIcon from '@mui/icons-material/PersonAdd';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import DescriptionIcon from '@mui/icons-material/Description';
+import EditIcon from '@mui/icons-material/Edit';
 
-export default function ProjectPage({ projectId, goHome, onOpenProcess }) {
+export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) {
   const [processes, setProcesses] = useState([]);
   const [users, setUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
   const [search, setSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
   const [project, setProject] = useState({ name: '' });
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
+  const [newProcessName, setNewProcessName] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
+    fetchData();
+  }, [projectId]);
+
+  const fetchData = () => {
     fetch(`http://localhost:4000/api/projects/${projectId}/processes`)
       .then(r => r.json()).then(setProcesses);
 
@@ -24,91 +47,406 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess }) {
     fetch(`http://localhost:4000/api/projects`)
       .then(r => r.json())
       .then(projects => setProject(projects.find(p => p.id === projectId)));
-  }, [projectId]);
+
+    // Fetch all users for adding to project
+    fetch(`http://localhost:4000/api/users`)
+      .then(r => r.json()).then(setAllUsers);
+  };
+
+  const handleCreateProcess = async () => {
+    if (!newProcessName.trim()) return;
+
+    try {
+      const response = await fetch('http://localhost:4000/api/processes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          name: newProcessName,
+          author: user.name,
+          bpmn: null
+        })
+      });
+
+      if (response.ok) {
+        setCreateDialogOpen(false);
+        setNewProcessName('');
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error creating process:', error);
+    }
+  };
+
+  const handleAddUsers = async () => {
+    try {
+      for (const selectedUser of selectedUsers) {
+        await fetch('http://localhost:4000/api/project-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: projectId,
+            user_id: selectedUser.id
+          })
+        });
+      }
+      setAddUserDialogOpen(false);
+      setSelectedUsers([]);
+      fetchData();
+    } catch (error) {
+      console.error('Error adding users:', error);
+    }
+  };
 
   const filteredProcesses = processes.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredUsers = users.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()));
+  const availableUsers = allUsers.filter(u => !users.find(pu => pu.id === u.id));
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Верхняя строка */}
-      <Box display="flex" alignItems="center" mb={2}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>📁 {project.name}</Typography>
-        {goHome && (
-          <Button variant="outlined" size="small" onClick={goHome} sx={{ mr: 1 }}>
-            Back
+    <Box>
+      {/* App Bar */}
+      <AppBar position="static" elevation={1}>
+        <Toolbar>
+          <IconButton 
+            edge="start" 
+            color="inherit" 
+            onClick={goHome}
+            sx={{ mr: 2 }}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          
+          <FolderIcon sx={{ mr: 1 }} />
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            {project.name}
+          </Typography>
+
+          <Chip 
+            label={user.name} 
+            avatar={<Avatar>{user.name[0]}</Avatar>}
+            sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
+          />
+
+          <IconButton 
+            color="inherit" 
+            onClick={() => setDrawerOpen(true)}
+            sx={{ mr: 1 }}
+          >
+            <AccountCircleIcon />
+          </IconButton>
+        </Toolbar>
+      </AppBar>
+
+      {/* Main Content */}
+      <Box sx={{ p: 3 }}>
+        {/* Header Section */}
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Box>
+            <Typography variant="h4" gutterBottom>
+              Бизнес-процессы
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Управляйте и создавайте BPMN диаграммы для вашего проекта
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setCreateDialogOpen(true)}
+            size="large"
+          >
+            Создать процесс
           </Button>
+        </Box>
+
+        {/* Search and Filters */}
+        <Box display="flex" alignItems="center" mb={3}>
+          <TextField
+            variant="outlined"
+            size="small"
+            placeholder="Поиск процессов..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            sx={{ width: 350 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              )
+            }}
+          />
+          <Box ml="auto">
+            <Button 
+              variant="outlined" 
+              startIcon={<AccountTreeIcon />}
+              sx={{ mr: 1 }}
+            >
+              Карта процессов
+            </Button>
+            <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
+              <MoreVertIcon />
+            </IconButton>
+          </Box>
+        </Box>
+
+        {/* Processes Grid */}
+        {filteredProcesses.length > 0 ? (
+          <Grid container spacing={3}>
+            {filteredProcesses.map((process) => (
+              <Grid item xs={12} sm={6} md={4} key={process.id}>
+                <Card 
+                  sx={{ 
+                    height: '100%', 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    '&:hover': { 
+                      transform: 'translateY(-2px)',
+                      boxShadow: 4 
+                    }
+                  }}
+                  onClick={() => onOpenProcess && onOpenProcess(process.id)}
+                >
+                  <CardContent sx={{ flexGrow: 1 }}>
+                    <Box display="flex" alignItems="center" mb={2}>
+                      <DescriptionIcon color="primary" sx={{ mr: 1 }} />
+                      <Typography variant="h6" component="h3" noWrap>
+                        {process.name}
+                      </Typography>
+                    </Box>
+                    
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      BPMN диаграмма
+                    </Typography>
+                    
+                    <Box mt={2}>
+                      <Typography variant="caption" color="text.secondary">
+                        Создал: {process.author || 'Неизвестно'}
+                      </Typography>
+                      <br />
+                      <Typography variant="caption" color="text.secondary">
+                        Изменен: {process.updated_at ? new Date(process.updated_at).toLocaleDateString() : 'Никогда'}
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                  
+                  <Box sx={{ p: 2, pt: 0 }}>
+                    <Button 
+                      size="small" 
+                      color="primary"
+                      startIcon={<EditIcon />}
+                      fullWidth
+                    >
+                      Открыть редактор
+                    </Button>
+                  </Box>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        ) : (
+          <Box 
+            display="flex" 
+            flexDirection="column" 
+            alignItems="center" 
+            justifyContent="center"
+            sx={{ mt: 8 }}
+          >
+            <DescriptionIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              {search ? 'Процессы не найдены' : 'Пока нет процессов'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, textAlign: 'center' }}>
+              {search 
+                ? 'Попробуйте изменить поисковый запрос'
+                : 'Создайте свой первый BPMN процесс для моделирования бизнес-процессов'
+              }
+            </Typography>
+            {!search && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateDialogOpen(true)}
+              >
+                Создать первый процесс
+              </Button>
+            )}
+          </Box>
         )}
       </Box>
 
-      {/* Поиск и кнопки */}
-      <Box display="flex" alignItems="center" mb={2}>
-        <TextField
-          variant="outlined"
-          size="small"
-          placeholder="Filter table"
-          value={search}
-          onChange={(e)=>setSearch(e.target.value)}
-          sx={{ width: 300 }}
-          InputProps={{startAdornment:(
-            <InputAdornment position="start"><SearchIcon/></InputAdornment>
-          )}}
-        />
-        <Box ml="auto">
-          <Button variant="text" startIcon={<AccountTreeIcon/>}>View landscape</Button>
-          <Button variant="contained" startIcon={<AddIcon/>} sx={{ ml: 2 }}>Create new</Button>
-        </Box>
-      </Box>
-
-      {/* Таблица процессов */}
-      <TableContainer component={Paper}>
-        <Table size="small">
-          <TableHead sx={{bgcolor:'#f0f0f0'}}>
-            <TableRow>
-              <TableCell padding="checkbox"><Checkbox/></TableCell>
-              <TableCell>Name</TableCell>
-              <TableCell>Creator</TableCell>
-              <TableCell>Last changed</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredProcesses.map(proc => (
-              <TableRow hover key={proc.id}
-                onClick={() => onOpenProcess && onOpenProcess(proc.id)}
-                sx={{ cursor: 'pointer' }}>
-                <TableCell padding="checkbox"><Checkbox/></TableCell>
-                <TableCell>
-                  <Typography variant="body2" color="primary">{proc.name}</Typography>
-                  <Typography variant="caption">BPMN diagram</Typography>
-                </TableCell>
-                <TableCell>{proc.author || '—'}</TableCell>
-                <TableCell>{new Date(proc.updated_at).toLocaleString() || '—'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      {/* Блок Collaborators справа */}
-      <Box sx={{
-        position:'fixed', top:80, right:0, width:280, height:'calc(100% - 80px)', 
-        borderLeft:'1px solid #ddd', p:2, bgcolor:'#fff'
-      }}>
-        <Typography variant="subtitle1" gutterBottom>Collaborators</Typography>
-        <Box display="flex" mb={1}>
-          <TextField size="small" placeholder="Search" fullWidth
-            InputProps={{startAdornment:<InputAdornment position="start"><SearchIcon/></InputAdornment>}}/>
-          <Button variant="contained" size="small" sx={{ ml: 1 }}>Add user</Button>
-        </Box>
-        {users.map(u=>(
-          <Box key={u.id} display="flex" alignItems="center" mb={1}>
-            <Avatar sx={{ mr:1 }}>{u.name[0]}</Avatar>
-            <Box>
-              <Typography variant="body2">{u.name}</Typography>
-              <Typography variant="caption">{u.role}</Typography>
-            </Box>
+      {/* Collaborators Drawer */}
+      <Drawer
+        anchor="right"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        sx={{
+          '& .MuiDrawer-paper': {
+            width: 350,
+            p: 0
+          }
+        }}
+      >
+        <Box sx={{ p: 3 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">Участники проекта</Typography>
+            <IconButton onClick={() => setDrawerOpen(false)}>
+              <ArrowBackIcon />
+            </IconButton>
           </Box>
-        ))}
-      </Box>
+
+          <Box display="flex" gap={1} mb={3}>
+            <TextField
+              size="small"
+              placeholder="Поиск участников..."
+              fullWidth
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                )
+              }}
+            />
+            <Tooltip title="Добавить участника">
+              <IconButton 
+                color="primary"
+                onClick={() => setAddUserDialogOpen(true)}
+              >
+                <PersonAddIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+
+          <List>
+            {filteredUsers.map((user, index) => (
+              <React.Fragment key={user.id}>
+                <ListItem>
+                  <ListItemAvatar>
+                    <Avatar>{user.name[0]}</Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={user.name}
+                    secondary={
+                      <Box>
+                        <Typography variant="caption" display="block">
+                          {user.email}
+                        </Typography>
+                        <Chip 
+                          label={user.role} 
+                          size="small" 
+                          color={user.role === 'admin' ? 'error' : 'primary'}
+                          sx={{ mt: 0.5 }}
+                        />
+                      </Box>
+                    }
+                  />
+                </ListItem>
+                {index < filteredUsers.length - 1 && <Divider />}
+              </React.Fragment>
+            ))}
+          </List>
+
+          {filteredUsers.length === 0 && (
+            <Box textAlign="center" py={4}>
+              <AccountCircleIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+              <Typography variant="body2" color="text.secondary">
+                {userSearch ? 'Участники не найдены' : 'Пока нет участников'}
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      </Drawer>
+
+      {/* Options Menu */}
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => setMenuAnchor(null)}>
+          <UploadIcon sx={{ mr: 1 }} />
+          Импорт процесса
+        </MenuItem>
+        <MenuItem onClick={() => setMenuAnchor(null)}>
+          <DownloadIcon sx={{ mr: 1 }} />
+          Экспорт всех
+        </MenuItem>
+      </Menu>
+
+      {/* Create Process Dialog */}
+      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Создать новый процесс</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Название процесса"
+            fullWidth
+            variant="outlined"
+            value={newProcessName}
+            onChange={(e) => setNewProcessName(e.target.value)}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateDialogOpen(false)}>Отмена</Button>
+          <Button 
+            onClick={handleCreateProcess} 
+            variant="contained"
+            disabled={!newProcessName.trim()}
+          >
+            Создать
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Users Dialog */}
+      <Dialog open={addUserDialogOpen} onClose={() => setAddUserDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Добавить пользователей в проект</DialogTitle>
+        <DialogContent>
+          <Autocomplete
+            multiple
+            options={availableUsers}
+            getOptionLabel={(option) => `${option.name} (${option.email})`}
+            value={selectedUsers}
+            onChange={(event, newValue) => setSelectedUsers(newValue)}
+            renderTags={(value, getTagProps) =>
+              value.map((option, index) => (
+                <Chip
+                  variant="outlined"
+                  label={option.name}
+                  {...getTagProps({ index })}
+                  key={option.id}
+                />
+              ))
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                variant="outlined"
+                label="Выберите пользователей"
+                placeholder="Выберите пользователей для добавления"
+              />
+            )}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddUserDialogOpen(false)}>Отмена</Button>
+          <Button 
+            onClick={handleAddUsers} 
+            variant="contained"
+            disabled={selectedUsers.length === 0}
+          >
+            Добавить пользователей
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
