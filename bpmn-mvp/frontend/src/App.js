@@ -14,7 +14,7 @@ export default function App() {
   const [projectId, setProjectId] = useState(null);
   const [processId, setProcessId] = useState(null);
   const [loading, setLoading] = useState(true);
-
+//
   useEffect(() => {
     // Check if user is already logged in
     const token = localStorage.getItem('token');
