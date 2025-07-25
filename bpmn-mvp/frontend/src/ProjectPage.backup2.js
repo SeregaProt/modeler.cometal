@@ -18,14 +18,6 @@ import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import DescriptionIcon from '@mui/icons-material/Description';
 import EditIcon from '@mui/icons-material/Edit';
-import CheckIcon from '@mui/icons-material/Check';
-import CloseIcon from '@mui/icons-material/Close';
-import DeleteIcon from '@mui/icons-material/Delete';
-
-// Импорт новых утилит
-import apiService from './services/api';
-import { ensureArray, safeFilter, safeFind } from './utils/arrayHelpers';
-import { createErrorHandler, withErrorHandling } from './utils/errorHandler';
 
 export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) {
   const [processes, setProcesses] = useState([]);
@@ -42,122 +34,124 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [editingProjectName, setEditingProjectName] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [processToDelete, setProcessToDelete] = useState(null);
 
   useEffect(() => {
     fetchData();
   }, [projectId]);
 
-  // Создаем обработчик ошибок
-  const handleError = createErrorHandler(setError, setLoading);
-
-  const fetchData = withErrorHandling(async () => {
+  const fetchData = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Используем новый API сервис
-      const [processesData, usersData, projectsData, allUsersData] = await Promise.all([
-        apiService.getProcesses(projectId),
-        apiService.getProjectUsers(projectId),
-        apiService.getProjects(),
-        apiService.getUsers()
-      ]);
+      // Fetch processes
+      const processesResponse = await fetch(`http://localhost:4000/api/projects/${projectId}/processes`);
+      if (processesResponse.ok) {
+        const processesData = await processesResponse.json();
+        setProcesses(Array.isArray(processesData) ? processesData : []);
+      } else {
+        setProcesses([]);
+      }
 
-      // Безопасная обработка данных
-      setProcesses(ensureArray(processesData));
-      setUsers(ensureArray(usersData));
-      setAllUsers(ensureArray(allUsersData));
+      // Fetch project users
+      const usersResponse = await fetch(`http://localhost:4000/api/projects/${projectId}/users`);
+      if (usersResponse.ok) {
+        const usersData = await usersResponse.json();
+        setUsers(Array.isArray(usersData) ? usersData : []);
+      } else {
+        setUsers([]);
+      }
 
-      // Поиск проекта
-      const foundProject = safeFind(ensureArray(projectsData), p => p.id === projectId);
-      setProject(foundProject || { name: 'Неизвестный проект' });
+      // Fetch project info
+      const projectsResponse = await fetch(`http://localhost:4000/api/projects`);
+      if (projectsResponse.ok) {
+        const projectsData = await projectsResponse.json();
+        if (Array.isArray(projectsData)) {
+          const foundProject = projectsData.find(p => p.id === projectId);
+          setProject(foundProject || { name: 'Неизвестный проект' });
+        }
+      }
 
+      // Fetch all users for adding to project
+      const allUsersResponse = await fetch(`http://localhost:4000/api/users`);
+      if (allUsersResponse.ok) {
+        const allUsersData = await allUsersResponse.json();
+        setAllUsers(Array.isArray(allUsersData) ? allUsersData : []);
+      } else {
+        setAllUsers([]);
+      }
     } catch (error) {
-      handleError(error, 'fetchData');
-      // Устанавливаем безопасные значения по умолчанию
+      console.error('Error fetching data:', error);
       setProcesses([]);
       setUsers([]);
       setAllUsers([]);
       setProject({ name: 'Ошибка загрузки' });
+      setError('Ошибка загрузки данных: ' + error.message);
     } finally {
       setLoading(false);
     }
-  }, 'ProjectPage.fetchData');
+  };
 
-  const handleCreateProcess = withErrorHandling(async () => {
+  const handleCreateProcess = async () => {
     if (!newProcessName.trim()) return;
 
     try {
-      await apiService.createProcess({
-        project_id: projectId,
-        name: newProcessName,
-        author: user.name,
-        bpmn: null
+      const response = await fetch('http://localhost:4000/api/processes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          name: newProcessName,
+          author: user.name,
+          bpmn: null
+        })
       });
 
-      setCreateDialogOpen(false);
-      setNewProcessName('');
-      fetchData();
+      if (response.ok) {
+        setCreateDialogOpen(false);
+        setNewProcessName('');
+        fetchData();
+      } else {
+        const errorData = await response.json();
+        setError('Ошибка создания процесса: ' + (errorData.error || 'Неизвестная ошибка'));
+      }
     } catch (error) {
-      handleError(error, 'handleCreateProcess');
+      console.error('Error creating process:', error);
+      setError('Ошибка создания процесса: ' + error.message);
     }
-  }, 'ProjectPage.handleCreateProcess');
+  };
 
-  const handleAddUsers = withErrorHandling(async () => {
+  const handleAddUsers = async () => {
     try {
-      // Добавляем пользователей параллельно
-      await Promise.all(
-        selectedUsers.map(selectedUser =>
-          apiService.assignUserToProject(projectId, selectedUser.id)
-        )
-      );
-
+      for (const selectedUser of selectedUsers) {
+        await fetch('http://localhost:4000/api/project-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: projectId,
+            user_id: selectedUser.id
+          })
+        });
+      }
       setAddUserDialogOpen(false);
       setSelectedUsers([]);
       fetchData();
     } catch (error) {
-      handleError(error, 'handleAddUsers');
+      console.error('Error adding users:', error);
+      setError('Ошибка добавления пользователей: ' + error.message);
     }
-  }, 'ProjectPage.handleAddUsers');
-
-  // Используем безопасные утилиты для работы с массивами
-  const filteredProcesses = safeFilter(processes, p => 
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
-  const filteredUsers = safeFilter(users, u => 
-    u.name.toLowerCase().includes(userSearch.toLowerCase())
-  );
-  const availableUsers = safeFilter(allUsers, u => 
-    !safeFind(users, pu => pu.id === u.id)
-  );
-
-  const handleDeleteProcess = (process, event) => {
-    event.stopPropagation(); // Предотвращаем открытие процесса при клике на кнопку удаления
-    setProcessToDelete(process);
-    setDeleteDialogOpen(true);
   };
 
-  const confirmDeleteProcess = withErrorHandling(async () => {
-    if (!processToDelete) return;
+  // Убеждаемся, что все массивы действительно являются массивами
+  const safeProcesses = Array.isArray(processes) ? processes : [];
+  const safeUsers = Array.isArray(users) ? users : [];
+  const safeAllUsers = Array.isArray(allUsers) ? allUsers : [];
 
-    try {
-      await apiService.deleteProcess(processToDelete.id);
-      setDeleteDialogOpen(false);
-      setProcessToDelete(null);
-      fetchData(); // Обновляем список процессов
-    } catch (error) {
-      handleError(error, 'confirmDeleteProcess');
-    }
-  }, 'ProjectPage.confirmDeleteProcess');
+  const filteredProcesses = safeProcesses.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredUsers = safeUsers.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()));
+  const availableUsers = safeAllUsers.filter(u => !safeUsers.find(pu => pu.id === u.id));
 
-  const cancelDeleteProcess = () => {
-    setDeleteDialogOpen(false);
-    setProcessToDelete(null);
-  };  return (
+  return (
     <Box>
       {/* App Bar */}
       <AppBar position="static" elevation={1}>

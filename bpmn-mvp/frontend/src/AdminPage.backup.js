@@ -26,47 +26,28 @@ export default function AdminPage({ goHome, user, onLogout }) {
   }, []);
 
   const fetchData = async () => {
-    const token = localStorage.getItem('token');
     setLoading(true);
     setError(null);
     
     try {
       // Fetch users
-      const usersResponse = await fetch("http://localhost:4000/api/users", {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const usersResponse = await fetch("http://localhost:4000/api/users");
       if (usersResponse.ok) {
         const usersData = await usersResponse.json();
         setUsers(Array.isArray(usersData) ? usersData : []);
       } else {
         setUsers([]);
-        if (usersResponse.status === 401) {
-          localStorage.removeItem('token');
-          window.location.reload();
-          return;
-        }
-        throw new Error(`Ошибка загрузки пользователей: ${usersResponse.status}`);
+        throw new Error('Ошибка загрузки пользователей');
       }
 
       // Fetch projects
-      const projectsResponse = await fetch("http://localhost:4000/api/projects", {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const projectsResponse = await fetch("http://localhost:4000/api/projects");
       if (projectsResponse.ok) {
         const projectsData = await projectsResponse.json();
         setProjects(Array.isArray(projectsData) ? projectsData : []);
       } else {
         setProjects([]);
-        if (projectsResponse.status === 401) {
-          localStorage.removeItem('token');
-          window.location.reload();
-          return;
-        }
-        throw new Error(`Ошибка загрузки проектов: ${projectsResponse.status}`);
+        throw new Error('Ошибка загрузки проектов');
       }
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -81,14 +62,10 @@ export default function AdminPage({ goHome, user, onLogout }) {
   const handleAssignUser = async () => {
     if (!projectId || !userId) return;
 
-    const token = localStorage.getItem('token');
     try {
       const response = await fetch("http://localhost:4000/api/project-users", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId, user_id: userId })
       });
 
@@ -332,15 +309,11 @@ function UserDialog({ open, onClose, onSuccess, onError }) {
     e.preventDefault();
     if (!email || !name || !password) return;
 
-    const token = localStorage.getItem('token');
     setSubmitting(true);
     try {
       const response = await fetch("http://localhost:4000/api/users", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, name, role, password })
       });
 
