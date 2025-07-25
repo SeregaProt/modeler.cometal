@@ -394,7 +394,7 @@ app.put('/api/processes/:id', authenticateToken, (req, res) => {
       }
     );
   } else if (bpmn && name) {
-    // Ес��и переданы и название, и BPMN диаграмма
+    // Если переданы и название, и BPMN диаграмма
     db.run(
       `UPDATE processes SET name = ?, bpmn = ?, updated_at = datetime('now') WHERE id = ?`,
       [name, bpmn, req.params.id],

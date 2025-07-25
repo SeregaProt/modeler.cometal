@@ -100,7 +100,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
     
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name },
+      { id: user.id, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -318,36 +318,15 @@ app.get('/api/projects/:id/processes', authenticateToken, paginate({ defaultLimi
 
 // Создание нового процесса с автором и датой изменения (требует аутентификации)
 app.post('/api/processes', authenticateToken, (req, res) => {
-  const { project_id, name, bpmn } = req.body;
-  
-  // Используем имя пользователя из токена аутентификации
-  const authorName = req.user.name || req.user.email || 'Неизвестный автор';
-  
-  console.log('Creating process:', {
-    project_id,
-    name,
-    author: authorName,
-    user: req.user
-  });
-  
+  const { project_id, name, bpmn, author } = req.body;
   db.run(
     `INSERT INTO processes (project_id, name, bpmn, author, updated_at) VALUES (?, ?, ?, ?, datetime('now'))`,
-    [project_id, name, bpmn || null, authorName],
+    [project_id, name, bpmn, author || 'Неизвестный автор'],
     function (err) {
       if (err) {
-        console.error('Error creating process:', err);
         return res.status(500).json({ error: 'Database error' });
       }
-      
-      console.log('Process created successfully:', {
-        id: this.lastID,
-        author: authorName
-      });
-      
-      res.json({ 
-        id: this.lastID,
-        author: authorName
-      });
+      res.json({ id: this.lastID });
     }
   );
 });
@@ -394,7 +373,7 @@ app.put('/api/processes/:id', authenticateToken, (req, res) => {
       }
     );
   } else if (bpmn && name) {
-    // Ес��и переданы и название, и BPMN диаграмма
+    // Если переданы и название, и BPMN диаграмма
     db.run(
       `UPDATE processes SET name = ?, bpmn = ?, updated_at = datetime('now') WHERE id = ?`,
       [name, bpmn, req.params.id],
