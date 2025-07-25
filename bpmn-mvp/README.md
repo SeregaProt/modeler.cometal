@@ -1,4 +1,4 @@
-# BPMN Modeler MVP
+# BPMN Modeler 
 
 Веб-приложение для моделирования бизнес-процессов в формате BPMN 2.0, созданное по образцу Camunda Modeler.
 

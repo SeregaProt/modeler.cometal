@@ -10,6 +10,8 @@ import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LogoutIcon from '@mui/icons-material/Logout';
 import FolderIcon from '@mui/icons-material/Folder';
+import DeleteIcon from '@mui/icons-material/Delete';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 
 export default function ProjectsPage({ onSelectProject, onAdmin, user, onLogout }) {
   const [projects, setProjects] = useState([]);
@@ -18,6 +20,10 @@ export default function ProjectsPage({ onSelectProject, onAdmin, user, onLogout 
   const [open, setOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: '', description: '' });
   const [anchorEl, setAnchorEl] = useState(null);
+  const [projectMenuAnchor, setProjectMenuAnchor] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState(null);
 
   useEffect(() => {
     fetchProjects();
@@ -47,13 +53,15 @@ export default function ProjectsPage({ onSelectProject, onAdmin, user, onLogout 
 
       const data = await response.json();
       
-      // Убеждаемся, что data является массивом
-      if (Array.isArray(data)) {
-        setProjects(data);
+      // Обрабатываем пагинированный ответ
+      if (data && data.data && Array.isArray(data.data)) {
+        setProjects(data.data); // Используем массив из поля data
+      } else if (Array.isArray(data)) {
+        setProjects(data); // Если это просто массив
       } else {
         console.error('API returned non-array data:', data);
         setProjects([]); // Устанавливаем пустой массив как fallback
-        setError('Получены некорректные данные от сервера');
+        setError('Получены некорректные дан��ые от сервера');
       }
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -102,6 +110,54 @@ export default function ProjectsPage({ onSelectProject, onAdmin, user, onLogout 
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleProjectMenuClick = (event, project) => {
+    event.stopPropagation();
+    setProjectMenuAnchor(event.currentTarget);
+    setSelectedProject(project);
+  };
+
+  const handleProjectMenuClose = () => {
+    setProjectMenuAnchor(null);
+    setSelectedProject(null);
+  };
+
+  const handleDeleteClick = () => {
+    setProjectToDelete(selectedProject);
+    setDeleteDialogOpen(true);
+    handleProjectMenuClose();
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+
+    const token = localStorage.getItem('token');
+    try {
+      const response = await fetch(`http://localhost:4000/api/projects/${projectToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        setDeleteDialogOpen(false);
+        setProjectToDelete(null);
+        fetchProjects(); // Обновляем список проектов
+      } else {
+        const errorData = await response.json();
+        setError('Ошибка удаления проекта: ' + (errorData.error || 'Неизвестная ошибка'));
+      }
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      setError('Ошибка удаления проекта: ' + error.message);
+    }
+  };
+
+  const cancelDeleteProject = () => {
+    setDeleteDialogOpen(false);
+    setProjectToDelete(null);
   };
 
   // Убеждаемся, что projects всегда массив перед рендерингом
@@ -192,11 +248,19 @@ export default function ProjectsPage({ onSelectProject, onAdmin, user, onLogout 
                   onClick={() => onSelectProject(project.id)}
                 >
                   <CardContent sx={{ flexGrow: 1 }}>
-                    <Box display="flex" alignItems="center" mb={2}>
-                      <FolderIcon color="primary" sx={{ mr: 1 }} />
-                      <Typography variant="h6" component="h2">
-                        {project.name}
-                      </Typography>
+                    <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+                      <Box display="flex" alignItems="center">
+                        <FolderIcon color="primary" sx={{ mr: 1 }} />
+                        <Typography variant="h6" component="h2">
+                          {project.name}
+                        </Typography>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={(e) => handleProjectMenuClick(e, project)}
+                      >
+                        <MoreVertIcon />
+                      </IconButton>
                     </Box>
                     <Typography variant="body2" color="text.secondary">
                       {project.description || 'Нет описания'}
@@ -278,6 +342,40 @@ export default function ProjectsPage({ onSelectProject, onAdmin, user, onLogout 
             disabled={!newProject.name.trim()}
           >
             Создать
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Project Menu */}
+      <Menu
+        anchorEl={projectMenuAnchor}
+        open={Boolean(projectMenuAnchor)}
+        onClose={handleProjectMenuClose}
+      >
+        <MenuItem onClick={handleDeleteClick}>
+          <DeleteIcon sx={{ mr: 1 }} />
+          Удалить проект
+        </MenuItem>
+      </Menu>
+
+      {/* Delete Project Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={cancelDeleteProject} maxWidth="sm" fullWidth>
+        <DialogTitle>Подтверждение удаления</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Вы уверены, что хотите удалить проект "{projectToDelete?.name}"? 
+            Это действие удалит все бизнес-процессы и данные проекта. 
+            Это действие нельзя отменить.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelDeleteProject}>Отмена</Button>
+          <Button 
+            onClick={confirmDeleteProject} 
+            variant="contained"
+            color="error"
+          >
+            Удалить
           </Button>
         </DialogActions>
       </Dialog>

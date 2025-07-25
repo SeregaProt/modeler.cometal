@@ -73,6 +73,12 @@ class ApiService {
     });
   }
 
+  async deleteProject(projectId) {
+    return this.request(`/api/projects/${projectId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getProjectUsers(projectId) {
     return this.request(`/api/projects/${projectId}/users`);
   }
