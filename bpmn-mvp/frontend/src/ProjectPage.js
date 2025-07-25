@@ -95,10 +95,8 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
       await apiService.createProcess({
         project_id: projectId,
         name: newProcessName,
-        author: user.name,
         bpmn: null
       });
-
       setCreateDialogOpen(false);
       setNewProcessName('');
       fetchData();

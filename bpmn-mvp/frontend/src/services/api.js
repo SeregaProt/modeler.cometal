@@ -52,9 +52,11 @@ class ApiService {
     });
   }
 
-  // Project methods
-  async getProjects() {
-    return this.request('/api/projects');
+  // Project methods with pagination
+  async getProjects(options = {}) {
+    const { page = 1, limit = 10 } = options;
+    const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    return this.request(`/api/projects?${params}`);
   }
 
   async createProject(projectData) {
@@ -75,9 +77,11 @@ class ApiService {
     return this.request(`/api/projects/${projectId}/users`);
   }
 
-  // Process methods
-  async getProcesses(projectId) {
-    return this.request(`/api/projects/${projectId}/processes`);
+  // Process methods with pagination
+  async getProcesses(projectId, options = {}) {
+    const { page = 1, limit = 20 } = options;
+    const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    return this.request(`/api/projects/${projectId}/processes?${params}`);
   }
 
   async createProcess(processData) {
@@ -126,6 +130,17 @@ class ApiService {
   // Search method
   async search(query) {
     return this.request(`/api/search?q=${encodeURIComponent(query)}`);
+  }
+
+  // Utility methods for pagination
+  async getAllProjects() {
+    // Для случаев, когда нужны все проекты (например, для выпадающих списков)
+    return this.request('/api/projects?limit=1000');
+  }
+
+  async getAllUsers() {
+    // Для случаев, когда нужны все пользователи
+    return this.request('/api/users');
   }
 }
 
