@@ -9,19 +9,29 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+// Используем тот же секрет, что и в enhanced версии
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production-min-32-chars';
 
-// Middleware для проверки JWT токена
+// Middleware для проверки JWT токена с улучшенной обработкой ошибок
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.sendStatus(401);
+    console.log('No token provided');
+    return res.status(401).json({ error: 'Токен доступа отсутствует' });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.sendStatus(403);
+    if (err) {
+      console.log('Token verification failed:', err.message);
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ error: 'Токен истек' });
+      } else if (err.name === 'JsonWebTokenError') {
+        return res.status(403).json({ error: 'Недействительный токен' });
+      }
+      return res.status(403).json({ error: 'Ошибка проверки токена' });
+    }
     req.user = user;
     next();
   });
@@ -92,6 +102,8 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '24h' }
     );
     
+    console.log('User logged in:', user.email, 'Token created with secret length:', JWT_SECRET.length);
+    
     res.json({ 
       token, 
       user: { id: user.id, email: user.email, name: user.name, role: user.role }
@@ -123,12 +135,17 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// Пользователи
-app.get('/api/users', (req, res) => {
-  db.all('SELECT id, email, name, role FROM users', [], (err, rows) => res.json(rows));
+// Пользователи (требует аутентификации)
+app.get('/api/users', authenticateToken, (req, res) => {
+  db.all('SELECT id, email, name, role FROM users', [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(rows);
+  });
 });
 
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', authenticateToken, async (req, res) => {
   const { email, name, role, password } = req.body;
   const hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash('password123', 10);
   
@@ -141,77 +158,182 @@ app.post('/api/users', async (req, res) => {
   });
 });
 
-// Проекты
-app.get('/api/projects', (req, res) => {
-  db.all('SELECT * FROM projects', [], (err, rows) => res.json(rows));
+// Проекты (требует аутентификации)
+app.get('/api/projects', authenticateToken, (req, res) => {
+  db.all('SELECT * FROM projects', [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(rows);
+  });
 });
 
-app.post('/api/projects', (req, res) => {
+app.post('/api/projects', authenticateToken, (req, res) => {
   const { name, description } = req.body;
-  db.run('INSERT INTO projects (name, description) VALUES (?, ?)', [name, description], function (err) {
+  db.run('INSERT INTO projects (name, description, created_by) VALUES (?, ?, ?)', 
+    [name, description, req.user.id], function (err) {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
     res.json({ id: this.lastID });
   });
 });
 
-// Назначение пользователей в проекты
-app.post('/api/project-users', (req, res) => {
+// Обновление проекта (требует аутентификации)
+app.put('/api/projects/:id', authenticateToken, (req, res) => {
+  const { name, description } = req.body;
+  
+  if (!name && !description) {
+    return res.status(400).json({ error: 'No data provided for update' });
+  }
+  
+  let query = 'UPDATE projects SET ';
+  let params = [];
+  let updates = [];
+  
+  if (name) {
+    updates.push('name = ?');
+    params.push(name);
+  }
+  
+  if (description) {
+    updates.push('description = ?');
+    params.push(description);
+  }
+  
+  query += updates.join(', ') + ' WHERE id = ?';
+  params.push(req.params.id);
+  
+  db.run(query, params, function (err) {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json({ success: true });
+  });
+});
+
+// Назначение пользователей в проекты (требует аутентификации)
+app.post('/api/project-users', authenticateToken, (req, res) => {
   const { project_id, user_id } = req.body;
   db.run('INSERT INTO project_users (project_id, user_id) VALUES (?, ?)', [project_id, user_id], function (err) {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
     res.json({ id: this.lastID });
   });
 });
 
-app.get('/api/projects/:id/users', (req, res) => {
+app.get('/api/projects/:id/users', authenticateToken, (req, res) => {
   db.all(
     'SELECT users.* FROM users JOIN project_users ON users.id = project_users.user_id WHERE project_users.project_id = ?',
     [req.params.id],
-    (err, rows) => res.json(rows)
+    (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      res.json(rows);
+    }
   );
 });
 
-// Получение всех процессов проекта с автором и датой изменения
-app.get('/api/projects/:id/processes', (req, res) => {
+// Получение всех процессов проекта с автором и датой изменения (требует аутентификации)
+app.get('/api/projects/:id/processes', authenticateToken, (req, res) => {
   db.all(
     `SELECT id, project_id, name, author, updated_at FROM processes WHERE project_id = ? ORDER BY updated_at DESC`,
     [req.params.id],
-    (err, rows) => res.json(rows)
+    (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      res.json(rows);
+    }
   );
 });
 
-// Создание нового процесса с автором и датой изменения
-app.post('/api/processes', (req, res) => {
+// Создание нового процесса с автором и датой изменения (требует аутентификации)
+app.post('/api/processes', authenticateToken, (req, res) => {
   const { project_id, name, bpmn, author } = req.body;
   db.run(
     `INSERT INTO processes (project_id, name, bpmn, author, updated_at) VALUES (?, ?, ?, ?, datetime('now'))`,
     [project_id, name, bpmn, author || 'Неизвестный автор'],
     function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
       res.json({ id: this.lastID });
     }
   );
 });
 
-// Получение одного процесса
-app.get('/api/processes/:id', (req, res) => {
-  db.get('SELECT * FROM processes WHERE id = ?', [req.params.id], (err, row) => res.json(row));
-});
-
-// Обновление процесса и даты изменения
-app.put('/api/processes/:id', (req, res) => {
-  const { bpmn } = req.body;
-  db.run(
-    `UPDATE processes SET bpmn = ?, updated_at = datetime('now') WHERE id = ?`,
-    [bpmn, req.params.id],
-    function (err) {
-      res.json({ success: true });
+// Получение одного процесса (требует аутентификации)
+app.get('/api/processes/:id', authenticateToken, (req, res) => {
+  db.get('SELECT * FROM processes WHERE id = ?', [req.params.id], (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
     }
-  );
+    if (!row) {
+      return res.status(404).json({ error: 'Process not found' });
+    }
+    res.json(row);
+  });
 });
 
-// Удаление процесса
-app.delete('/api/processes/:id', (req, res) => {
+// Обновление процесса и даты изменения (требует аутентификации)
+app.put('/api/processes/:id', authenticateToken, (req, res) => {
+  const { bpmn, name } = req.body;
+  
+  // Если передано только название, обновляем только его
+  if (name && !bpmn) {
+    db.run(
+      `UPDATE processes SET name = ?, updated_at = datetime('now') WHERE id = ?`,
+      [name, req.params.id],
+      function (err) {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+        res.json({ success: true });
+      }
+    );
+  } else if (bpmn && !name) {
+    // Если передана только BPMN диаграмма
+    db.run(
+      `UPDATE processes SET bpmn = ?, updated_at = datetime('now') WHERE id = ?`,
+      [bpmn, req.params.id],
+      function (err) {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+        res.json({ success: true });
+      }
+    );
+  } else if (bpmn && name) {
+    // Если переданы и название, и BPMN диаграмма
+    db.run(
+      `UPDATE processes SET name = ?, bpmn = ?, updated_at = datetime('now') WHERE id = ?`,
+      [name, bpmn, req.params.id],
+      function (err) {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+        res.json({ success: true });
+      }
+    );
+  } else {
+    res.status(400).json({ error: 'No data provided for update' });
+  }
+});
+
+// Удаление процесса (требует аутентификации)
+app.delete('/api/processes/:id', authenticateToken, (req, res) => {
   db.run('DELETE FROM processes WHERE id = ?', [req.params.id], function (err) {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
     res.json({ success: true });
   });
 });
 
-app.listen(4000, () => console.log('Backend running on http://localhost:4000'));
+app.listen(4000, () => {
+  console.log('Backend running on http://localhost:4000');
+  console.log('JWT Secret length:', JWT_SECRET.length);
+});

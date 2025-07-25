@@ -4,7 +4,7 @@ import {
   IconButton, Avatar, InputAdornment, Dialog, DialogTitle,
   DialogContent, DialogActions, Autocomplete, Chip, Menu, MenuItem,
   AppBar, Toolbar, Grid, Drawer, List, ListItem,
-  ListItemAvatar, ListItemText, Divider, Tooltip, Alert, CircularProgress
+  ListItemAvatar, ListItemText, Divider, Tooltip
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
@@ -18,14 +18,6 @@ import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import DescriptionIcon from '@mui/icons-material/Description';
 import EditIcon from '@mui/icons-material/Edit';
-import CheckIcon from '@mui/icons-material/Check';
-import CloseIcon from '@mui/icons-material/Close';
-import DeleteIcon from '@mui/icons-material/Delete';
-
-// Импорт новых утилит
-import apiService from './services/api';
-import { ensureArray, safeFilter, safeFind } from './utils/arrayHelpers';
-import { createErrorHandler, withErrorHandling } from './utils/errorHandler';
 
 export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) {
   const [processes, setProcesses] = useState([]);
@@ -40,124 +32,77 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [editingProjectName, setEditingProjectName] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [processToDelete, setProcessToDelete] = useState(null);
 
   useEffect(() => {
     fetchData();
   }, [projectId]);
 
-  // Создаем обработчик ошибок
-  const handleError = createErrorHandler(setError, setLoading);
+  const fetchData = () => {
+    fetch(`http://localhost:4000/api/projects/${projectId}/processes`)
+      .then(r => r.json()).then(setProcesses);
 
-  const fetchData = withErrorHandling(async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Используем новый API сервис
-      const [processesData, usersData, projectsData, allUsersData] = await Promise.all([
-        apiService.getProcesses(projectId),
-        apiService.getProjectUsers(projectId),
-        apiService.getProjects(),
-        apiService.getUsers()
-      ]);
+    fetch(`http://localhost:4000/api/projects/${projectId}/users`)
+      .then(r => r.json()).then(setUsers);
 
-      // Безопасная обработка данных
-      setProcesses(ensureArray(processesData));
-      setUsers(ensureArray(usersData));
-      setAllUsers(ensureArray(allUsersData));
+    fetch(`http://localhost:4000/api/projects`)
+      .then(r => r.json())
+      .then(projects => setProject(projects.find(p => p.id === projectId)));
 
-      // Поиск проекта
-      const foundProject = safeFind(ensureArray(projectsData), p => p.id === projectId);
-      setProject(foundProject || { name: 'Неизвестный проект' });
+    // Fetch all users for adding to project
+    fetch(`http://localhost:4000/api/users`)
+      .then(r => r.json()).then(setAllUsers);
+  };
 
-    } catch (error) {
-      handleError(error, 'fetchData');
-      // Устанавливаем безопасные значения по умолчанию
-      setProcesses([]);
-      setUsers([]);
-      setAllUsers([]);
-      setProject({ name: 'Ошибка загрузки' });
-    } finally {
-      setLoading(false);
-    }
-  }, 'ProjectPage.fetchData');
-
-  const handleCreateProcess = withErrorHandling(async () => {
+  const handleCreateProcess = async () => {
     if (!newProcessName.trim()) return;
 
     try {
-      await apiService.createProcess({
-        project_id: projectId,
-        name: newProcessName,
-        author: user.name,
-        bpmn: null
+      const response = await fetch('http://localhost:4000/api/processes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          name: newProcessName,
+          author: user.name,
+          bpmn: null
+        })
       });
 
-      setCreateDialogOpen(false);
-      setNewProcessName('');
-      fetchData();
+      if (response.ok) {
+        setCreateDialogOpen(false);
+        setNewProcessName('');
+        fetchData();
+      }
     } catch (error) {
-      handleError(error, 'handleCreateProcess');
+      console.error('Error creating process:', error);
     }
-  }, 'ProjectPage.handleCreateProcess');
+  };
 
-  const handleAddUsers = withErrorHandling(async () => {
+  const handleAddUsers = async () => {
     try {
-      // Добавляем пользователей параллельно
-      await Promise.all(
-        selectedUsers.map(selectedUser =>
-          apiService.assignUserToProject(projectId, selectedUser.id)
-        )
-      );
-
+      for (const selectedUser of selectedUsers) {
+        await fetch('http://localhost:4000/api/project-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: projectId,
+            user_id: selectedUser.id
+          })
+        });
+      }
       setAddUserDialogOpen(false);
       setSelectedUsers([]);
       fetchData();
     } catch (error) {
-      handleError(error, 'handleAddUsers');
+      console.error('Error adding users:', error);
     }
-  }, 'ProjectPage.handleAddUsers');
-
-  // Используем безопасные утилиты для работы с массивами
-  const filteredProcesses = safeFilter(processes, p => 
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
-  const filteredUsers = safeFilter(users, u => 
-    u.name.toLowerCase().includes(userSearch.toLowerCase())
-  );
-  const availableUsers = safeFilter(allUsers, u => 
-    !safeFind(users, pu => pu.id === u.id)
-  );
-
-  const handleDeleteProcess = (process, event) => {
-    event.stopPropagation(); // Предотвращаем открытие процесса при клике на кнопку удаления
-    setProcessToDelete(process);
-    setDeleteDialogOpen(true);
   };
 
-  const confirmDeleteProcess = withErrorHandling(async () => {
-    if (!processToDelete) return;
+  const filteredProcesses = processes.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredUsers = users.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()));
+  const availableUsers = allUsers.filter(u => !users.find(pu => pu.id === u.id));
 
-    try {
-      await apiService.deleteProcess(processToDelete.id);
-      setDeleteDialogOpen(false);
-      setProcessToDelete(null);
-      fetchData(); // Обновляем список процессов
-    } catch (error) {
-      handleError(error, 'confirmDeleteProcess');
-    }
-  }, 'ProjectPage.confirmDeleteProcess');
-
-  const cancelDeleteProcess = () => {
-    setDeleteDialogOpen(false);
-    setProcessToDelete(null);
-  };  return (
+  return (
     <Box>
       {/* App Bar */}
       <AppBar position="static" elevation={1}>
@@ -194,13 +139,6 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
 
       {/* Main Content */}
       <Box sx={{ p: 3 }}>
-        {/* Error Alert */}
-        {error && (
-          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-
         {/* Header Section */}
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Box>
@@ -216,7 +154,6 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
             startIcon={<AddIcon />}
             onClick={() => setCreateDialogOpen(true)}
             size="large"
-            disabled={loading}
           >
             Создать процесс
           </Button>
@@ -231,7 +168,6 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             sx={{ width: 350 }}
-            disabled={loading}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -245,28 +181,17 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
               variant="outlined" 
               startIcon={<AccountTreeIcon />}
               sx={{ mr: 1 }}
-              disabled={loading}
             >
               Карта процессов
             </Button>
-            <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} disabled={loading}>
+            <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
               <MoreVertIcon />
             </IconButton>
           </Box>
         </Box>
 
-        {/* Loading Indicator */}
-        {loading && (
-          <Box display="flex" justifyContent="center" alignItems="center" sx={{ py: 4 }}>
-            <CircularProgress />
-            <Typography variant="body1" sx={{ ml: 2 }}>
-              Загрузка данных...
-            </Typography>
-          </Box>
-        )}
-
         {/* Processes Grid */}
-        {!loading && filteredProcesses.length > 0 && (
+        {filteredProcesses.length > 0 ? (
           <Grid container spacing={3}>
             {filteredProcesses.map((process) => (
               <Grid item xs={12} sm={6} md={4} key={process.id}>
@@ -321,10 +246,7 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
               </Grid>
             ))}
           </Grid>
-        )}
-
-        {/* Empty State */}
-        {!loading && filteredProcesses.length === 0 && !error && (
+        ) : (
           <Box 
             display="flex" 
             flexDirection="column" 

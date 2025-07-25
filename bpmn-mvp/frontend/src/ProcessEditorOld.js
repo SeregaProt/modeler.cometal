@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import BpmnModeler from "bpmn-js/lib/Modeler";
 
 import {
   Box, AppBar, Toolbar, Typography, Button, IconButton,
   Snackbar, Alert, Menu, MenuItem, Dialog, DialogTitle,
-  DialogContent, DialogActions, TextField, Chip
+  DialogContent, DialogActions, TextField
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -14,58 +14,20 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import FitScreenIcon from '@mui/icons-material/FitScreen';
-import CloudDoneIcon from '@mui/icons-material/CloudDone';
 
 // Импортируем CSS для bpmn-js
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import './ProcessEditor.css';
 
-// Импорт новых утилит
-import apiService from './services/api';
-import { createErrorHandler, withErrorHandling } from './utils/errorHandler';
-import { useDebounce } from './hooks/useDebounce';
-
 export default function ProcessEditor({ processId, goBack, user }) {
   const canvasRef = useRef();
   const modeler = useRef();
-  const autoSaveInterval = useRef();
   const [process, setProcess] = useState({ name: '', author: '' });
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importXml, setImportXml] = useState('');
-  const [lastAutoSave, setLastAutoSave] = useState(null);
-  const [isAutoSaving, setIsAutoSaving] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Создаем обработчик ошибок
-  const handleError = createErrorHandler(setError);
-
-  // Debounced автосохранение для предотвращения частых сохранений
-  const [debouncedAutoSave] = useDebounce(async () => {
-    if (!modeler.current || !hasChanges || isAutoSaving) return;
-
-    setIsAutoSaving(true);
-    
-    try {
-      const xml = await new Promise((resolve, reject) => {
-        modeler.current.saveXML({ format: true }, (err, xml) => {
-          if (err) reject(err);
-          else resolve(xml);
-        });
-      });
-
-      await apiService.updateProcess(processId, { bpmn: xml });
-      setLastAutoSave(new Date());
-      setHasChanges(false);
-    } catch (error) {
-      handleError(error, 'autoSave');
-    } finally {
-      setIsAutoSaving(false);
-    }
-  }, 2000); // 2 секунды задержки
 
   useEffect(() => {
     // Создаем модельер с полным набором элементов
@@ -81,39 +43,7 @@ export default function ProcessEditor({ processId, goBack, user }) {
         modeler.current.destroy();
       }
     };
-  }, [processId]); // Убираем autoSave из зависимостей
-
-  // Отдельный useEffect для отслеживания изменений в модели
-  useEffect(() => {
-    if (!modeler.current) return;
-
-    const eventBus = modeler.current.get('eventBus');
-    
-    const handleChange = () => {
-      setHasChanges(true);
-      debouncedAutoSave();
-    };
-
-    // События, которые указывают на изменения
-    const changeEvents = [
-      'element.changed',
-      'shape.added',
-      'shape.removed',
-      'connection.added',
-      'connection.removed',
-      'elements.paste'
-    ];
-
-    changeEvents.forEach(event => {
-      eventBus.on(event, handleChange);
-    });
-
-    return () => {
-      changeEvents.forEach(event => {
-        eventBus.off(event, handleChange);
-      });
-    };
-  }, [debouncedAutoSave]);
+  }, [processId]);
 
   // Функции для управления масштабом
   const zoomIn = () => {
@@ -136,50 +66,63 @@ export default function ProcessEditor({ processId, goBack, user }) {
     canvas.zoom(1);
   };
 
-  const fetchProcess = withErrorHandling(async () => {
-    try {
-      const proc = await apiService.getProcess(processId);
-      setProcess(proc);
-      if (proc.bpmn) {
-        modeler.current.importXML(proc.bpmn);
-      } else {
-        modeler.current.createDiagram();
-      }
-    } catch (error) {
-      handleError(error, 'fetchProcess');
-      setSnackbar({ 
-        open: true, 
-        message: 'Ошибка загрузки процесса', 
-        severity: 'error' 
-      });
-    }
-  }, 'ProcessEditor.fetchProcess');
-
-  const save = withErrorHandling(async () => {
-    try {
-      const xml = await new Promise((resolve, reject) => {
-        modeler.current.saveXML({ format: true }, (err, xml) => {
-          if (err) reject(err);
-          else resolve(xml);
+  const fetchProcess = () => {
+    fetch(`http://localhost:4000/api/processes/${processId}`)
+      .then(r => r.json())
+      .then(proc => {
+        setProcess(proc);
+        if (proc.bpmn) {
+          modeler.current.importXML(proc.bpmn);
+        } else {
+          modeler.current.createDiagram();
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching process:', err);
+        setSnackbar({ 
+          open: true, 
+          message: 'Ошибка загрузки процесса', 
+          severity: 'error' 
         });
       });
+  };
 
-      await apiService.updateProcess(processId, { bpmn: xml });
-      setSnackbar({ 
-        open: true, 
-        message: 'Процесс успешно сохранен!', 
-        severity: 'success' 
+  const save = () => {
+    modeler.current.saveXML({ format: true }, (err, xml) => {
+      if (err) {
+        setSnackbar({ 
+          open: true, 
+          message: 'Ошибка сохранения диаграммы', 
+          severity: 'error' 
+        });
+        return;
+      }
+
+      fetch(`http://localhost:4000/api/processes/${processId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bpmn: xml })
+      })
+      .then(response => {
+        if (response.ok) {
+          setSnackbar({ 
+            open: true, 
+            message: 'Процесс успешно сохранен!', 
+            severity: 'success' 
+          });
+        } else {
+          throw new Error('Save failed');
+        }
+      })
+      .catch(err => {
+        setSnackbar({ 
+          open: true, 
+          message: 'Ошибка сохранения процесса', 
+          severity: 'error' 
+        });
       });
-      setHasChanges(false);
-    } catch (error) {
-      handleError(error, 'save');
-      setSnackbar({ 
-        open: true, 
-        message: 'Ошибка сохранения процесса', 
-        severity: 'error' 
-      });
-    }
-  }, 'ProcessEditor.save');
+    });
+  };
 
   const exportBpmn = () => {
     modeler.current.saveXML({ format: true }, (err, xml) => {
@@ -253,14 +196,6 @@ export default function ProcessEditor({ processId, goBack, user }) {
     setMenuAnchor(null);
   };
 
-  const formatTime = (date) => {
-    return date.toLocaleTimeString('ru-RU', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  };
-
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* App Bar */}
@@ -278,35 +213,6 @@ export default function ProcessEditor({ processId, goBack, user }) {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             {process.name || 'Редактор процессов'}
           </Typography>
-
-          {/* Индикатор автосохранения */}
-          {isAutoSaving && (
-            <Chip
-              icon={<CloudDoneIcon />}
-              label="Автосохранение..."
-              size="small"
-              sx={{ 
-                mr: 2, 
-                bgcolor: 'rgba(255,255,255,0.1)', 
-                color: 'white',
-                '& .MuiChip-icon': { color: 'white' }
-              }}
-            />
-          )}
-
-          {lastAutoSave && !isAutoSaving && (
-            <Chip
-              icon={<CloudDoneIcon />}
-              label={`Сохранено в ${formatTime(lastAutoSave)}`}
-              size="small"
-              sx={{ 
-                mr: 2, 
-                bgcolor: 'rgba(76, 175, 80, 0.2)', 
-                color: 'white',
-                '& .MuiChip-icon': { color: '#4caf50' }
-              }}
-            />
-          )}
 
           <Typography variant="body2" sx={{ mr: 2, opacity: 0.8 }}>
             Автор: {process.author || 'Неизвестно'}
@@ -387,9 +293,6 @@ export default function ProcessEditor({ processId, goBack, user }) {
             border: '1px solid #ccc',
             borderRadius: '4px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          },
-          '& .bjs-powered-by': {
-            display: 'none !important'
           }
         }} 
       />

@@ -151,7 +151,7 @@
   opacity: 0.8;
 }
 
-/* Стили для и��менения размера */
+/* Стили для изменения размера */
 .djs-resize-handle {
   fill: #1976d2;
   stroke: white;
@@ -173,6 +173,26 @@
   border-radius: 4px;
   background: white;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Убираем ссылку на BPMN.IO */
+.bjs-powered-by,
+.bjs-powered-by a,
+.bjs-powered-by span,
+.bjs-powered-by div {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Скрываем любые элементы с текстом bpmn.io */
+[title*="bpmn.io"],
+[href*="bpmn.io"],
+a[href*="bpmn.io"] {
+  display: none !important;
 }
 
 /* Адаптивные стили */
