@@ -67,13 +67,16 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
         apiService.getUsers()
       ]);
 
-      // Безопасная обработка данных
-      setProcesses(ensureArray(processesData));
+      // Безопасная обработка данных с учетом пагинации
+      const processesList = processesData?.data || processesData;
+      setProcesses(ensureArray(processesList));
+      
       setUsers(ensureArray(usersData));
       setAllUsers(ensureArray(allUsersData));
 
-      // Поиск проекта
-      const foundProject = safeFind(ensureArray(projectsData), p => p.id === projectId);
+      // Поиск проекта с учетом пагинации
+      const projectsList = projectsData?.data || projectsData;
+      const foundProject = safeFind(ensureArray(projectsList), p => p.id === projectId);
       setProject(foundProject || { name: 'Неизвестный проект' });
 
     } catch (error) {
@@ -305,7 +308,7 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
                     </Box>
                   </CardContent>
                   
-                  <Box sx={{ p: 2, pt: 0 }}>
+                  <Box sx={{ p: 2, pt: 0, display: 'flex', gap: 1 }}>
                     <Button 
                       size="small" 
                       color="primary"
@@ -314,6 +317,14 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
                     >
                       Открыть редактор
                     </Button>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={(e) => handleDeleteProcess(process, e)}
+                      sx={{ ml: 1 }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </Box>
                 </Card>
               </Grid>
@@ -520,6 +531,27 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
             disabled={selectedUsers.length === 0}
           >
             Добавить пользователей
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Process Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={cancelDeleteProcess} maxWidth="sm" fullWidth>
+        <DialogTitle>Подтверждение удаления</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Вы уверены, что хотите удалить про��есс "{processToDelete?.name}"? 
+            Это действие нельзя отменить.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelDeleteProcess}>Отмена</Button>
+          <Button 
+            onClick={confirmDeleteProcess} 
+            variant="contained"
+            color="error"
+          >
+            Удалить
           </Button>
         </DialogActions>
       </Dialog>
