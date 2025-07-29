@@ -447,6 +447,48 @@ app.get('/api/projects/:id/users', authenticateToken, validateId(), (req, res) =
   );
 });
 
+// Enhanced project update endpoint
+app.put('/api/projects/:id', authenticateToken, validateId(), (req, res) => {
+  const { name, description } = req.body;
+  const updates = [];
+  const values = [];
+
+  if (name !== undefined) {
+    updates.push('name = ?');
+    values.push(name);
+  }
+  if (description !== undefined) {
+    updates.push('description = ?');
+    values.push(description);
+  }
+  updates.push('updated_at = datetime("now")');
+  values.push(req.params.id);
+
+  if (updates.length === 1) {
+    return res.status(400).json({ error: 'Нет данных для обновления' });
+  }
+
+  db.run(
+    `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`,
+    values,
+    function (err) {
+      if (err) {
+        logger.error('Error updating project:', err);
+        return res.status(500).json({ error: 'Ошибка обновления проекта' });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Проект не найден' });
+      }
+      logger.info('Project updated:', {
+        projectId: req.params.id,
+        updatedBy: req.user.id,
+        changes: this.changes
+      });
+      res.json({ success: true, changes: this.changes });
+    }
+  );
+});
+
 // Enhanced process management endpoints
 app.get('/api/projects/:id/processes', authenticateToken, validateId(), (req, res) => {
   db.all(
@@ -467,7 +509,7 @@ app.get('/api/projects/:id/processes', authenticateToken, validateId(), (req, re
 
 app.post('/api/processes', authenticateToken, validate('createProcess'), (req, res) => {
   const { project_id, name, bpmn } = req.body;
-  const author = req.user.name || 'Неизвестный автор';
+  const author = req.user.name || req.user.email || 'Неизвестный автор';
   
   db.run(
     `INSERT INTO processes (project_id, name, bpmn, author, created_at, updated_at) VALUES (?, ?, ?, ?, datetime("now"), datetime("now"))`,
@@ -570,6 +612,48 @@ app.delete('/api/processes/:id', authenticateToken, validateId(), (req, res) => 
     });
     
     res.json({ success: true });
+  });
+});
+
+app.delete('/api/projects/:id', authenticateToken, validateId(), (req, res) => {
+  const projectId = req.params.id;
+
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION');
+
+    db.run('DELETE FROM processes WHERE project_id = ?', [projectId], (err) => {
+      if (err) {
+        db.run('ROLLBACK');
+        logger.error('Failed to delete processes for project', { projectId, error: err });
+        return res.status(500).json({ error: 'Failed to delete processes' });
+      }
+
+      db.run('DELETE FROM project_users WHERE project_id = ?', [projectId], (err) => {
+        if (err) {
+          db.run('ROLLBACK');
+          logger.error('Failed to delete project users', { projectId, error: err });
+          return res.status(500).json({ error: 'Failed to delete project users' });
+        }
+
+        db.run('DELETE FROM projects WHERE id = ?', [projectId], function(err) {
+          if (err) {
+            db.run('ROLLBACK');
+            logger.error('Failed to delete project', { projectId, error: err });
+            return res.status(500).json({ error: 'Failed to delete project' });
+          }
+
+          if (this.changes === 0) {
+            db.run('ROLLBACK');
+            logger.warn('Project not found for delete', { projectId });
+            return res.status(404).json({ error: 'Project not found' });
+          }
+
+          db.run('COMMIT');
+          logger.info('Project and related data deleted', { projectId, deletedBy: req.user.id });
+          res.json({ success: true, message: 'Project and all related data deleted successfully' });
+        });
+      });
+    });
   });
 });
 

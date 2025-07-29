@@ -173,9 +173,54 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
           </IconButton>
           
           <FolderIcon sx={{ mr: 1 }} />
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            {project.name}
-          </Typography>
+          {editingProjectName ? (
+            <Box display="flex" alignItems="center" sx={{ flexGrow: 1 }}>
+              <TextField
+                value={newProjectName}
+                onChange={e => setNewProjectName(e.target.value)}
+                size="small"
+                variant="standard"
+                autoFocus
+                sx={{ mr: 1, minWidth: 180, color: 'white', input: { color: 'white' } }}
+                InputProps={{
+                  style: { color: 'white' },
+                }}
+              />
+              <IconButton
+                color="success"
+                onClick={async () => {
+                  await apiService.updateProject(projectId, { name: newProjectName });
+                  setEditingProjectName(false);
+                  fetchData();
+                }}
+                disabled={!newProjectName.trim()}
+                sx={{ color: 'success.main' }}
+              >
+                <CheckIcon />
+              </IconButton>
+              <IconButton
+                color="error"
+                onClick={() => setEditingProjectName(false)}
+              >
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          ) : (
+            <Box display="flex" alignItems="center" sx={{ flexGrow: 1 }}>
+              <Typography variant="h6" sx={{ mr: 1 }}>
+                {project.name}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => {
+                  setNewProjectName(project.name);
+                  setEditingProjectName(true);
+                }}
+              >
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
 
           <Chip 
             label={user.name} 
@@ -288,9 +333,55 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
                   <CardContent sx={{ flexGrow: 1 }}>
                     <Box display="flex" alignItems="center" mb={2}>
                       <DescriptionIcon color="primary" sx={{ mr: 1 }} />
-                      <Typography variant="h6" component="h3" noWrap>
-                        {process.name}
-                      </Typography>
+                      {process.editing ? (
+                        <Box display="flex" alignItems="center">
+                          <TextField
+                            value={process.newName || process.name}
+                            onChange={e => {
+                              setProcesses(ps => ps.map(p => p.id === process.id ? { ...p, newName: e.target.value } : p));
+                            }}
+                            size="small"
+                            variant="standard"
+                            autoFocus
+                            sx={{ mr: 1, minWidth: 120 }}
+                          />
+                          <IconButton
+                            color="primary"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await apiService.updateProcess(process.id, { name: process.newName });
+                              setProcesses(ps => ps.map(p => p.id === process.id ? { ...p, editing: false, name: process.newName } : p));
+                            }}
+                            disabled={!process.newName || !process.newName.trim()}
+                          >
+                            <CheckIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            color="error"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setProcesses(ps => ps.map(p => p.id === process.id ? { ...p, editing: false, newName: undefined } : p));
+                            }}
+                          >
+                            <CloseIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      ) : (
+                        <Box display="flex" alignItems="center">
+                          <Typography variant="h6" component="h3" noWrap sx={{ mr: 1 }}>
+                            {process.name}
+                          </Typography>
+                          <IconButton
+                            size="small"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setProcesses(ps => ps.map(p => p.id === process.id ? { ...p, editing: true, newName: p.name } : p));
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      )}
                     </Box>
                     
                     <Typography variant="body2" color="text.secondary" gutterBottom>
