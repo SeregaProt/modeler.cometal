@@ -9,7 +9,18 @@
 }
 
 .djs-palette .djs-palette-entries {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 8px;
+}
+
+/* Центрируем кнопку с тремя точками (ellipsis/more) */
+.djs-palette .entry[data-action="more"],
+.djs-palette .entry.more {
+  margin-top: auto;
+  margin-bottom: 8px;
+  align-self: center;
 }
 
 .djs-palette .entry {
