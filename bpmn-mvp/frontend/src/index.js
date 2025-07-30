@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import App from './App';
 import theme from './theme';
+import { suppressResizeObserverError } from './utils/resizeObserverFix';
+
+// Подавляем ошибки ResizeObserver глобально
+suppressResizeObserverError();
 
 const root = createRoot(document.getElementById('root'));
 root.render(

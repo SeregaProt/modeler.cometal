@@ -28,7 +28,7 @@ const rateLimiters = {
   // General API rate limit
   general: createRateLimiter(
     15 * 60 * 1000, // 15 minutes
-    100, // limit each IP to 100 requests per windowMs
+    10000, // limit each IP to 10 000 requests per windowMs (разработка)
     'Слишком много запросов с этого IP, попробуйте позже'
   ),
 

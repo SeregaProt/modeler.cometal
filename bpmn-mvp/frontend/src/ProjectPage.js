@@ -27,7 +27,7 @@ import apiService from './services/api';
 import { ensureArray, safeFilter, safeFind } from './utils/arrayHelpers';
 import { createErrorHandler, withErrorHandling } from './utils/errorHandler';
 
-export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) {
+export default function ProjectPage({ projectId, goHome, onOpenProcess, onOpenProcessMap, user }) {
   const [processes, setProcesses] = useState([]);
   const [users, setUsers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
@@ -292,6 +292,7 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, user }) 
               startIcon={<AccountTreeIcon />}
               sx={{ mr: 1 }}
               disabled={loading}
+              onClick={onOpenProcessMap}
             >
               Карта процессов
             </Button>

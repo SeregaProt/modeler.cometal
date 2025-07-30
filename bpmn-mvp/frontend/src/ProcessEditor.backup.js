@@ -15,7 +15,6 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import FitScreenIcon from '@mui/icons-material/FitScreen';
 import CloudDoneIcon from '@mui/icons-material/CloudDone';
 import CommentIcon from '@mui/icons-material/Comment';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CommentWidget from './CommentWidget';
 import ReactDOM from 'react-dom';
 
@@ -35,7 +34,7 @@ function formatTime(date) {
   });
 }
 
-export default function ProcessEditor({ processId, goBack, user, onOpenProcessMap }) {
+export default function ProcessEditor({ processId, goBack, user }) {
   const canvasRef = useRef();
   const modeler = useRef();
   const overlaysRef = useRef({}); // {commentId: overlayId}
@@ -304,20 +303,6 @@ export default function ProcessEditor({ processId, goBack, user, onOpenProcessMa
           <IconButton color="inherit" onClick={resetZoom} title="100%"><Typography variant="caption" sx={{ minWidth: 30 }}>100%</Typography></IconButton>
           <IconButton color="inherit" onClick={zoomIn} title="Увеличить"><ZoomInIcon /></IconButton>
           <IconButton color="inherit" onClick={fitViewport} title="По размеру" sx={{ mr: 2 }}><FitScreenIcon /></IconButton>
-          
-          {/* Кнопка "Настроить связи" согласно ТЗ пункт 3.4 */}
-          {onOpenProcessMap && (
-            <Button 
-              color="inherit" 
-              startIcon={<AccountTreeIcon />} 
-              onClick={() => onOpenProcessMap(processId)}
-              sx={{ mr: 1 }}
-              title="Открыть карту процессов с подсветкой текущего процесса"
-            >
-              Настроить связи
-            </Button>
-          )}
-          
           <Button color="inherit" startIcon={<SaveIcon />} onClick={save} sx={{ mr: 1 }}>Сохранить</Button>
           <IconButton color="inherit" onClick={(e) => setMenuAnchor(e.currentTarget)}><MoreVertIcon /></IconButton>
           <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>

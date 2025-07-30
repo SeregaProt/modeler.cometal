@@ -7,6 +7,8 @@ import ProjectsPage from "./ProjectsPage";
 import ProjectPage from "./ProjectPage";
 import ProcessEditor from "./ProcessEditor";
 import AdminPage from "./AdminPage";
+import ProcessMapPage from "./ProcessMapPage";
+import { isTokenValid, clearInvalidToken } from './utils/auth';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -14,7 +16,7 @@ export default function App() {
   const [projectId, setProjectId] = useState(null);
   const [processId, setProcessId] = useState(null);
   const [loading, setLoading] = useState(true);
-//
+
   useEffect(() => {
     // Check if user is already logged in
     const token = localStorage.getItem('token');
@@ -22,10 +24,17 @@ export default function App() {
     
     if (token && savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        // Проверяем валидность токена
+        if (isTokenValid(token)) {
+          setUser(JSON.parse(savedUser));
+        } else {
+          // Токен недействителен, очищаем
+          console.log('Invalid token detected, clearing...');
+          clearInvalidToken();
+        }
       } catch (error) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        console.error('Error parsing saved user data:', error);
+        clearInvalidToken();
       }
     }
     setLoading(false);
@@ -83,8 +92,19 @@ export default function App() {
             setProcessId(pid);
             setView("process");
           }}
+          onOpenProcessMap={() => setView("processMap")}
           goHome={() => setView("projects")}
           user={user}
+        />
+      )}
+      {view === "processMap" && (
+        <ProcessMapPage
+          projectId={projectId}
+          onBack={() => setView("project")}
+          onOpenProcess={(pid) => {
+            setProcessId(pid);
+            setView("process");
+          }}
         />
       )}
       {view === "process" && (

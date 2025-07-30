@@ -75,8 +75,22 @@ db.serialize(() => {
     name TEXT,
     bpmn TEXT,
     author TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id)
+  )`);
+
+  // Создаем таблицу для связей процессов (ER-диаграмма)
+  db.run(`CREATE TABLE IF NOT EXISTS process_relations (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    from_process_id INTEGER NOT NULL,
+    to_process_id INTEGER NOT NULL,
+    relation_type TEXT DEFAULT 'one-to-one',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (from_process_id) REFERENCES processes(id),
+    FOREIGN KEY (to_process_id) REFERENCES processes(id)
   )`);
 
   // Создаем админа по умолчанию
@@ -365,6 +379,29 @@ app.get('/api/processes/:id', authenticateToken, (req, res) => {
   });
 });
 
+// --- API: update process position (должен быть выше общих маршрутов /api/processes/:id) ---
+app.put('/api/processes/:id/position', authenticateToken, (req, res) => {
+  const { position_x, position_y } = req.body;
+  const processId = req.params.id;
+  if (position_x === undefined || position_y === undefined) {
+    return res.status(400).json({ error: 'position_x and position_y are required' });
+  }
+  db.run(
+    `UPDATE processes SET position_x = ?, position_y = ?, updated_at = datetime('now') WHERE id = ?`,
+    [position_x, position_y, processId],
+    function (err) {
+      if (err) {
+        console.error('Error updating process position:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Process not found' });
+      }
+      res.json({ success: true });
+    }
+  );
+});
+
 // Обновление процесса и даты изменения (требует аутентификации)
 app.put('/api/processes/:id', authenticateToken, (req, res) => {
   const { bpmn, name } = req.body;
@@ -412,9 +449,96 @@ app.put('/api/processes/:id', authenticateToken, (req, res) => {
 
 // Удаление процесса (требует аутентификации)
 app.delete('/api/processes/:id', authenticateToken, (req, res) => {
-  db.run('DELETE FROM processes WHERE id = ?', [req.params.id], function (err) {
+  const processId = req.params.id;
+  
+  // Начинаем транзакцию для удаления процесса и всех его связей
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION');
+    
+    // Удаляем все связи процесса
+    db.run('DELETE FROM process_relations WHERE from_process_id = ? OR to_process_id = ?', [processId, processId], (err) => {
+      if (err) {
+        db.run('ROLLBACK');
+        return res.status(500).json({ error: 'Failed to delete process relations' });
+      }
+      
+      // Удаляем сам процесс
+      db.run('DELETE FROM processes WHERE id = ?', [processId], function (err) {
+        if (err) {
+          db.run('ROLLBACK');
+          return res.status(500).json({ error: 'Database error' });
+        }
+        
+        db.run('COMMIT');
+        res.json({ success: true });
+      });
+    });
+  });
+});
+
+// --- API endpoints для связей процессов (ER-диаграмма) ---
+
+// Получить все связи для проекта
+app.get('/api/projects/:id/process-relations', authenticateToken, (req, res) => {
+  db.all(
+    `SELECT * FROM process_relations WHERE project_id = ?`,
+    [req.params.id],
+    (err, rows) => {
+      if (err) {
+        console.error('Error fetching process relations:', err);
+        return res.status(500).json({ error: 'Ошибка получения связей процессов' });
+      }
+      res.json(rows);
+    }
+  );
+});
+
+// Добавить новую связь
+app.post('/api/process-relations', authenticateToken, (req, res) => {
+  const { project_id, from_process_id, to_process_id, relation_type } = req.body;
+  
+  if (!project_id || !from_process_id || !to_process_id) {
+    return res.status(400).json({ error: 'project_id, from_process_id, to_process_id обязательны' });
+  }
+  
+  // Проверяем, что не создаем дубликат связи
+  db.get(
+    'SELECT id FROM process_relations WHERE project_id = ? AND from_process_id = ? AND to_process_id = ?',
+    [project_id, from_process_id, to_process_id],
+    (err, existing) => {
+      if (err) {
+        console.error('Error checking existing relation:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (existing) {
+        return res.status(400).json({ error: 'Связь уже существует' });
+      }
+      
+      db.run(
+        `INSERT INTO process_relations (project_id, from_process_id, to_process_id, relation_type) VALUES (?, ?, ?, ?)`,
+        [project_id, from_process_id, to_process_id, relation_type || 'one-to-one'],
+        function (err) {
+          if (err) {
+            console.error('Error creating process relation:', err);
+            return res.status(500).json({ error: 'Ошибка создания связи процессов' });
+          }
+          res.status(201).json({ id: this.lastID });
+        }
+      );
+    }
+  );
+});
+
+// Удалить связь
+app.delete('/api/process-relations/:id', authenticateToken, (req, res) => {
+  db.run('DELETE FROM process_relations WHERE id = ?', [req.params.id], function (err) {
     if (err) {
-      return res.status(500).json({ error: 'Database error' });
+      console.error('Error deleting process relation:', err);
+      return res.status(500).json({ error: 'Ошибка удаления связи процессов' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Связь не найдена' });
     }
     res.json({ success: true });
   });
@@ -461,6 +585,19 @@ app.delete('/api/projects/:id', authenticateToken, (req, res) => {
     });
   });
 });
+
+// --- MIGRATION: add position_x, position_y columns if not exist ---
+db.run(`ALTER TABLE processes ADD COLUMN position_x REAL DEFAULT NULL`, (err) => {
+  if (err && !err.message.includes('duplicate column name')) {
+    console.error('Error adding position_x column:', err);
+  }
+});
+db.run(`ALTER TABLE processes ADD COLUMN position_y REAL DEFAULT NULL`, (err) => {
+  if (err && !err.message.includes('duplicate column name')) {
+    console.error('Error adding position_y column:', err);
+  }
+});
+
 
 app.listen(4000, () => {
   console.log('Backend running on http://localhost:4000');

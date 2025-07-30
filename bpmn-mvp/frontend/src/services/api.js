@@ -18,7 +18,11 @@ class ApiService {
     };
 
     try {
-      const response = await fetch(`${this.baseURL}${endpoint}`, config);
+      // Avoid duplicate "/api" if baseURL already contains it
+      const fullUrl = this.baseURL.endsWith('/api')
+        ? `${this.baseURL}${endpoint.replace(/^\/api/, '')}`
+        : `${this.baseURL}${endpoint}`;
+      const response = await fetch(fullUrl, config);
       
       if (response.status === 401 || response.status === 403) {
         clearInvalidToken();
@@ -90,6 +94,24 @@ class ApiService {
     return this.request(`/api/projects/${projectId}/processes?${params}`);
   }
 
+  // Process relations (ER-диаграмма)
+  async getProcessRelations(projectId) {
+    return this.request(`/api/projects/${projectId}/process-relations`);
+  }
+
+  async createProcessRelation({ project_id, from_process_id, to_process_id, relation_type }) {
+    return this.request('/api/process-relations', {
+      method: 'POST',
+      body: JSON.stringify({ project_id, from_process_id, to_process_id, relation_type }),
+    });
+  }
+
+  async deleteProcessRelation(relationId) {
+    return this.request(`/api/process-relations/${relationId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async createProcess(processData) {
     return this.request('/api/processes', {
       method: 'POST',
@@ -105,6 +127,14 @@ class ApiService {
     return this.request(`/api/processes/${processId}`, {
       method: 'PUT',
       body: JSON.stringify(processData),
+    });
+  }
+
+  // Сохранение позиции процесса на карте
+  async updateProcessPosition(processId, position) {
+    return this.request(`/api/processes/${processId}/position`, {
+      method: 'PUT',
+      body: JSON.stringify(position),
     });
   }
 
