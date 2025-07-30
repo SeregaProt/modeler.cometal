@@ -34,7 +34,7 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 // Rate limiting
 app.use('/api/auth/login', rateLimiters.auth);
 app.use('/api/auth/register', rateLimiters.register);
-app.use('/api/', rateLimiters.general);
+// app.use('/api/', rateLimiters.general); // ОТКЛЮЧЕНО для разработки
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -141,7 +141,22 @@ db.serialize(() => {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     version INTEGER DEFAULT 1,
+    position_x REAL DEFAULT NULL,
+    position_y REAL DEFAULT NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id)
+  )`);
+
+  // Create table for process relations (ER-диаграмма)
+  db.run(`CREATE TABLE IF NOT EXISTS process_relations (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    from_process_id INTEGER NOT NULL,
+    to_process_id INTEGER NOT NULL,
+    relation_type TEXT DEFAULT 'one-to-one',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (from_process_id) REFERENCES processes(id),
+    FOREIGN KEY (to_process_id) REFERENCES processes(id)
   )`);
 
   // Create default admin user
@@ -154,6 +169,18 @@ db.serialize(() => {
         logger.info('Default admin user created or already exists');
       }
     });
+
+  // Migration: add position_x, position_y columns if not exist
+  db.run(`ALTER TABLE processes ADD COLUMN position_x REAL DEFAULT NULL`, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      logger.error('Error adding position_x column:', err);
+    }
+  });
+  db.run(`ALTER TABLE processes ADD COLUMN position_y REAL DEFAULT NULL`, (err) => {
+    if (err && !err.message.includes('duplicate column name')) {
+      logger.error('Error adding position_y column:', err);
+    }
+  });
 });
 
 // Enhanced authentication endpoints
@@ -489,10 +516,59 @@ app.put('/api/projects/:id', authenticateToken, validateId(), (req, res) => {
   );
 });
 
+// --- Process Relations (ER-диаграмма) endpoints ---
+// Получить все связи для проекта
+app.get('/api/projects/:id/process-relations', authenticateToken, validateId(), (req, res) => {
+  db.all(
+    `SELECT * FROM process_relations WHERE project_id = ?`,
+    [req.params.id],
+    (err, rows) => {
+      if (err) {
+        logger.error('Error fetching process relations:', err);
+        return res.status(500).json({ error: 'Ошибка получения связей процессов' });
+      }
+      res.json(rows);
+    }
+  );
+});
+
+// Добавить новую связь
+app.post('/api/process-relations', authenticateToken, (req, res) => {
+  const { project_id, from_process_id, to_process_id, relation_type } = req.body;
+  if (!project_id || !from_process_id || !to_process_id) {
+    return res.status(400).json({ error: 'project_id, from_process_id, to_process_id обязательны' });
+  }
+  db.run(
+    `INSERT INTO process_relations (project_id, from_process_id, to_process_id, relation_type) VALUES (?, ?, ?, ?)`,
+    [project_id, from_process_id, to_process_id, relation_type || 'one-to-one'],
+    function (err) {
+      if (err) {
+        logger.error('Error creating process relation:', err);
+        return res.status(500).json({ error: 'Ошибка создания связи процессов' });
+      }
+      res.status(201).json({ id: this.lastID });
+    }
+  );
+});
+
+// Удалить связь
+app.delete('/api/process-relations/:id', authenticateToken, validateId(), (req, res) => {
+  db.run('DELETE FROM process_relations WHERE id = ?', [req.params.id], function (err) {
+    if (err) {
+      logger.error('Error deleting process relation:', err);
+      return res.status(500).json({ error: 'Ошибка удаления связи процессов' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Связь не найдена' });
+    }
+    res.json({ success: true });
+  });
+});
+
 // Enhanced process management endpoints
 app.get('/api/projects/:id/processes', authenticateToken, validateId(), (req, res) => {
   db.all(
-    `SELECT id, project_id, name, author, created_at, updated_at, version 
+    `SELECT id, project_id, name, author, created_at, updated_at, version, position_x, position_y
      FROM processes 
      WHERE project_id = ? 
      ORDER BY updated_at DESC`,
@@ -550,6 +626,40 @@ app.get('/api/processes/:id', authenticateToken, validateId(), (req, res) => {
     
     res.json(row);
   });
+});
+
+// Update process position (должен быть выше общего маршрута PUT /api/processes/:id)
+app.put('/api/processes/:id/position', authenticateToken, validateId(), (req, res) => {
+  const { position_x, position_y } = req.body;
+  const processId = req.params.id;
+  
+  if (position_x === undefined || position_y === undefined) {
+    return res.status(400).json({ error: 'position_x and position_y are required' });
+  }
+  
+  db.run(
+    `UPDATE processes SET position_x = ?, position_y = ?, updated_at = datetime('now') WHERE id = ?`,
+    [position_x, position_y, processId],
+    function (err) {
+      if (err) {
+        logger.error('Error updating process position:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Process not found' });
+      }
+      
+      logger.info('Process position updated:', {
+        processId: req.params.id,
+        position_x,
+        position_y,
+        updatedBy: req.user.id
+      });
+      
+      res.json({ success: true });
+    }
+  );
 });
 
 app.put('/api/processes/:id', authenticateToken, validateId(), validate('updateProcess'), (req, res) => {

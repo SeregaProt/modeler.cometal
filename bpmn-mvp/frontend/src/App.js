@@ -7,6 +7,7 @@ import ProjectsPage from "./ProjectsPage";
 import ProjectPage from "./ProjectPage";
 import ProcessEditor from "./ProcessEditor";
 import AdminPage from "./AdminPage";
+import ProcessMapPage from "./ProcessMapPage";
 import { isTokenValid, clearInvalidToken } from './utils/auth';
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
   const [view, setView] = useState("projects");
   const [projectId, setProjectId] = useState(null);
   const [processId, setProcessId] = useState(null);
+  const [highlightedProcessId, setHighlightedProcessId] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export default function App() {
     
     if (token && savedUser) {
       try {
-        // Проверяем валидность токена
+        // Пров��ряем валидность токена
         if (isTokenValid(token)) {
           setUser(JSON.parse(savedUser));
         } else {
@@ -89,10 +91,30 @@ export default function App() {
           projectId={projectId}
           onOpenProcess={(pid) => {
             setProcessId(pid);
+            setHighlightedProcessId(null);
             setView("process");
+          }}
+          onOpenProcessMap={() => {
+            setHighlightedProcessId(null);
+            setView("processMap");
           }}
           goHome={() => setView("projects")}
           user={user}
+        />
+      )}
+      {view === "processMap" && (
+        <ProcessMapPage
+          projectId={projectId}
+          highlightedProcessId={highlightedProcessId}
+          onBack={() => {
+            setHighlightedProcessId(null);
+            setView("project");
+          }}
+          onOpenProcess={(pid) => {
+            setProcessId(pid);
+            setHighlightedProcessId(null);
+            setView("process");
+          }}
         />
       )}
       {view === "process" && (
@@ -100,6 +122,10 @@ export default function App() {
           processId={processId}
           goBack={() => setView("project")}
           user={user}
+          onOpenProcessMap={(pid) => {
+            setHighlightedProcessId(pid);
+            setView("processMap");
+          }}
         />
       )}
     </ThemeProvider>
