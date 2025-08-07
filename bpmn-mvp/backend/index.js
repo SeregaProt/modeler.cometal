@@ -834,3 +834,26 @@ process.on('SIGINT', () => {
 });
 
 module.exports = app; // Export for testing
+// Обновить handles связи
+app.put('/api/process-relations/:id/handles', authenticateToken, validateId(), (req, res) => {
+  const { source_handle, target_handle } = req.body;
+  if (!source_handle || !target_handle) {
+    return res.status(400).json({ error: 'source_handle и target_handle обязательны' });
+  }
+  
+  db.run(
+    `UPDATE process_relations SET source_handle = ?, target_handle = ? WHERE id = ?`,
+    [source_handle, target_handle, req.params.id],
+    function (err) {
+      if (err) {
+        logger.error('Error updating process relation handles:', err);
+        return res.status(500).json({ error: 'Ошибка обновления точек соединения связи' });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Связь не найдена' });
+      }
+      res.json({ success: true, changes: this.changes });
+    }
+  );
+});
+
