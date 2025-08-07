@@ -1,12 +1,10 @@
 {
   "name": "bpmn-backend",
   "version": "1.0.0",
-  "main": "index.enhanced.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node index.enhanced.js",
-    "start:old": "node index.js",
-    "dev": "nodemon index.enhanced.js",
-    "dev:old": "nodemon index.js",
+    "start": "node index.js",
+    "dev": "nodemon index.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

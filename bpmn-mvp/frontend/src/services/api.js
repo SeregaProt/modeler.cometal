@@ -99,10 +99,17 @@ class ApiService {
     return this.request(`/api/projects/${projectId}/process-relations`);
   }
 
-  async createProcessRelation({ project_id, from_process_id, to_process_id, relation_type }) {
+  async createProcessRelation({ project_id, from_process_id, to_process_id, relation_type, source_handle, target_handle }) {
     return this.request('/api/process-relations', {
       method: 'POST',
-      body: JSON.stringify({ project_id, from_process_id, to_process_id, relation_type }),
+      body: JSON.stringify({ project_id, from_process_id, to_process_id, relation_type, source_handle, target_handle }),
+    });
+  }
+
+  async updateProcessRelationHandles(relationId, { source_handle, target_handle }) {
+    return this.request(`/api/process-relations/${relationId}/handles`, {
+      method: 'PUT',
+      body: JSON.stringify({ source_handle, target_handle }),
     });
   }
 

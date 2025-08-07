@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Box, Typography, Button, TextField, Paper, Card, CardContent,
-  IconButton, Avatar, InputAdornment, Dialog, DialogTitle,
+  Box, Typography, Button, TextField, Card, CardContent,
+  IconButton, InputAdornment, Dialog, DialogTitle,
   DialogContent, DialogActions, Autocomplete, Chip, Menu, MenuItem,
-  AppBar, Toolbar, Grid, Drawer, List, ListItem,
-  ListItemAvatar, ListItemText, Divider, Tooltip, Alert, CircularProgress
+  Grid, Drawer, List, ListItem,
+  ListItemAvatar, ListItemText, Divider, Tooltip, Alert, Avatar,
+  AppBar, Toolbar
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
@@ -12,7 +13,6 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadIcon from '@mui/icons-material/Upload';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FolderIcon from '@mui/icons-material/Folder';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
@@ -21,11 +21,16 @@ import EditIcon from '@mui/icons-material/Edit';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
-// Импорт новых утилит
+// Импорт компонентов и утилит
 import apiService from './services/api';
 import { ensureArray, safeFilter, safeFind } from './utils/arrayHelpers';
-import { createErrorHandler, withErrorHandling } from './utils/errorHandler';
+import AppHeader from './components/AppHeader';
+import LoadingState from './components/LoadingState';
+import EmptyState from './components/EmptyState';
+import ConfirmDialog from './components/ConfirmDialog';
+import { useErrorHandler } from './hooks/useErrorHandler';
 
 export default function ProjectPage({ projectId, goHome, onOpenProcess, onOpenProcessMap, user }) {
   const [processes, setProcesses] = useState([]);
@@ -40,90 +45,63 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, onOpenPr
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [processToDelete, setProcessToDelete] = useState(null);
+
+  const { error, loading, setLoading, clearError, withErrorHandling } = useErrorHandler();
 
   useEffect(() => {
     fetchData();
   }, [projectId]);
 
-  // Создаем обработчик ошибок
-  const handleError = createErrorHandler(setError, setLoading);
-
   const fetchData = withErrorHandling(async () => {
-    setLoading(true);
-    setError(null);
+    // Используем новый API сервис
+    const [processesData, usersData, projectsData, allUsersData] = await Promise.all([
+      apiService.getProcesses(projectId),
+      apiService.getProjectUsers(projectId),
+      apiService.getProjects(),
+      apiService.getUsers()
+    ]);
+
+    // Безопасная обработка данных с учетом пагинации
+    const processesList = processesData?.data || processesData;
+    setProcesses(ensureArray(processesList));
     
-    try {
-      // Используем новый API сервис
-      const [processesData, usersData, projectsData, allUsersData] = await Promise.all([
-        apiService.getProcesses(projectId),
-        apiService.getProjectUsers(projectId),
-        apiService.getProjects(),
-        apiService.getUsers()
-      ]);
+    setUsers(ensureArray(usersData));
+    setAllUsers(ensureArray(allUsersData));
 
-      // Безопасная обработка данных с учетом пагинации
-      const processesList = processesData?.data || processesData;
-      setProcesses(ensureArray(processesList));
-      
-      setUsers(ensureArray(usersData));
-      setAllUsers(ensureArray(allUsersData));
-
-      // Поиск проекта с учетом пагинации
-      const projectsList = projectsData?.data || projectsData;
-      const foundProject = safeFind(ensureArray(projectsList), p => p.id === projectId);
-      setProject(foundProject || { name: 'Неизвестный проект' });
-
-    } catch (error) {
-      handleError(error, 'fetchData');
-      // Устанавливаем безопасные значения по умолчанию
-      setProcesses([]);
-      setUsers([]);
-      setAllUsers([]);
-      setProject({ name: 'Ошибка загрузки' });
-    } finally {
-      setLoading(false);
-    }
-  }, 'ProjectPage.fetchData');
+    // Поиск проекта с учетом пагинации
+    const projectsList = projectsData?.data || projectsData;
+    const foundProject = safeFind(ensureArray(projectsList), p => p.id === projectId);
+    setProject(foundProject || { name: 'Неизвестный проект' });
+  }, 'fetchData');
 
   const handleCreateProcess = withErrorHandling(async () => {
     if (!newProcessName.trim()) return;
 
-    try {
-      await apiService.createProcess({
-        project_id: projectId,
-        name: newProcessName,
-        bpmn: null
-      });
-      setCreateDialogOpen(false);
-      setNewProcessName('');
-      fetchData();
-    } catch (error) {
-      handleError(error, 'handleCreateProcess');
-    }
-  }, 'ProjectPage.handleCreateProcess');
+    await apiService.createProcess({
+      project_id: projectId,
+      name: newProcessName,
+      bpmn: null
+    });
+    setCreateDialogOpen(false);
+    setNewProcessName('');
+    fetchData();
+  }, 'handleCreateProcess');
 
   const handleAddUsers = withErrorHandling(async () => {
-    try {
-      // Добавляем пользователей параллельно
-      await Promise.all(
-        selectedUsers.map(selectedUser =>
-          apiService.assignUserToProject(projectId, selectedUser.id)
-        )
-      );
+    // Добавляем пользователей параллельно
+    await Promise.all(
+      selectedUsers.map(selectedUser =>
+        apiService.assignUserToProject(projectId, selectedUser.id)
+      )
+    );
 
-      setAddUserDialogOpen(false);
-      setSelectedUsers([]);
-      fetchData();
-    } catch (error) {
-      handleError(error, 'handleAddUsers');
-    }
-  }, 'ProjectPage.handleAddUsers');
+    setAddUserDialogOpen(false);
+    setSelectedUsers([]);
+    fetchData();
+  }, 'handleAddUsers');
 
   // Используем безопасные утилиты для работы с массивами
   const filteredProcesses = safeFilter(processes, p => 
@@ -139,26 +117,15 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, onOpenPr
   const handleDeleteProcess = (process, event) => {
     event.stopPropagation(); // Предотвращаем открытие процесса при клике на кнопку удаления
     setProcessToDelete(process);
-    setDeleteDialogOpen(true);
   };
 
   const confirmDeleteProcess = withErrorHandling(async () => {
     if (!processToDelete) return;
 
-    try {
-      await apiService.deleteProcess(processToDelete.id);
-      setDeleteDialogOpen(false);
-      setProcessToDelete(null);
-      fetchData(); // Обновляем список процессов
-    } catch (error) {
-      handleError(error, 'confirmDeleteProcess');
-    }
-  }, 'ProjectPage.confirmDeleteProcess');
-
-  const cancelDeleteProcess = () => {
-    setDeleteDialogOpen(false);
+    await apiService.deleteProcess(processToDelete.id);
     setProcessToDelete(null);
-  };  return (
+    fetchData(); // Обновляем список процессов
+  }, 'confirmDeleteProcess');  return (
     <Box>
       {/* App Bar */}
       <AppBar position="static" elevation={1}>
@@ -242,7 +209,7 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, onOpenPr
       <Box sx={{ p: 3 }}>
         {/* Error Alert */}
         {error && (
-          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          <Alert severity="error" sx={{ mb: 3 }} onClose={clearError}>
             {error}
           </Alert>
         )}
@@ -303,14 +270,7 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, onOpenPr
         </Box>
 
         {/* Loading Indicator */}
-        {loading && (
-          <Box display="flex" justifyContent="center" alignItems="center" sx={{ py: 4 }}>
-            <CircularProgress />
-            <Typography variant="body1" sx={{ ml: 2 }}>
-              Загрузка данных...
-            </Typography>
-          </Box>
-        )}
+        {loading && <LoadingState message="Загрузка данных..." />}
 
         {/* Processes Grid */}
         {!loading && filteredProcesses.length > 0 && (
@@ -628,25 +588,15 @@ export default function ProjectPage({ projectId, goHome, onOpenProcess, onOpenPr
       </Dialog>
 
       {/* Delete Process Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={cancelDeleteProcess} maxWidth="sm" fullWidth>
-        <DialogTitle>Подтверждение удаления</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Вы уверены, что хотите удалить про��есс "{processToDelete?.name}"? 
-            Это действие нельзя отменить.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={cancelDeleteProcess}>Отмена</Button>
-          <Button 
-            onClick={confirmDeleteProcess} 
-            variant="contained"
-            color="error"
-          >
-            Удалить
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={!!processToDelete}
+        onClose={() => setProcessToDelete(null)}
+        onConfirm={confirmDeleteProcess}
+        title="Подтверждение удаления"
+        message={`Вы уверены, что хотите удалить процесс "${processToDelete?.name}"? Это действие нельзя отменить.`}
+        confirmText="Удалить"
+        confirmColor="error"
+      />
     </Box>
   );
 }
